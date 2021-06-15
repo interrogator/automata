@@ -10,8 +10,15 @@ import automata.fa.fa as fa
 class NFA(fa.FA):
     """A nondeterministic finite automaton."""
 
-    def __init__(self, *, states, input_symbols, transitions,
-                 initial_state, final_states):
+    def __init__(
+        self,
+        *,
+        states,
+        input_symbols,
+        transitions,
+        initial_state,
+        final_states
+    ):
         """Initialize a complete NFA."""
         self.states = states.copy()
         self.input_symbols = input_symbols.copy()
@@ -31,16 +38,21 @@ class NFA(fa.FA):
                 nfa_transitions[start_state][input_symbol] = {end_state}
 
         return cls(
-            states=dfa.states, input_symbols=dfa.input_symbols,
-            transitions=nfa_transitions, initial_state=dfa.initial_state,
-            final_states=dfa.final_states)
+            states=dfa.states,
+            input_symbols=dfa.input_symbols,
+            transitions=nfa_transitions,
+            initial_state=dfa.initial_state,
+            final_states=dfa.final_states,
+        )
 
     def _validate_transition_invalid_symbols(self, start_state, paths):
         for input_symbol in paths.keys():
-            if input_symbol not in self.input_symbols and input_symbol != '':
+            if input_symbol not in self.input_symbols and input_symbol != "":
                 raise exceptions.InvalidSymbolError(
-                    'state {} has invalid transition symbol {}'.format(
-                        start_state, input_symbol))
+                    "state {} has invalid transition symbol {}".format(
+                        start_state, input_symbol
+                    )
+                )
 
     def _validate_transition_end_states(self, start_state, paths):
         """Raise an error if transition end states are invalid."""
@@ -48,8 +60,9 @@ class NFA(fa.FA):
             for end_state in end_states:
                 if end_state not in self.states:
                     raise exceptions.InvalidStateError(
-                        'end state {} for transition on {} is '
-                        'not valid'.format(end_state, start_state))
+                        "end state {} for transition on {} is "
+                        "not valid".format(end_state, start_state)
+                    )
 
     def validate(self):
         """Return True if this NFA is internally consistent."""
@@ -77,8 +90,8 @@ class NFA(fa.FA):
             state = stack.pop()
             if state not in encountered_states:
                 encountered_states.add(state)
-                if '' in self.transitions[state]:
-                    stack.extend(self.transitions[state][''])
+                if "" in self.transitions[state]:
+                    stack.extend(self.transitions[state][""])
 
         return encountered_states
 
@@ -88,11 +101,13 @@ class NFA(fa.FA):
 
         for current_state in current_states:
             symbol_end_states = self.transitions[current_state].get(
-                input_symbol)
+                input_symbol
+            )
             if symbol_end_states:
                 for end_state in symbol_end_states:
                     next_current_states.update(
-                        self._get_lambda_closure(end_state))
+                        self._get_lambda_closure(end_state)
+                    )
 
         return next_current_states
 
@@ -100,8 +115,10 @@ class NFA(fa.FA):
         """Raise an error if the given config indicates rejected input."""
         if not (current_states & self.final_states):
             raise exceptions.RejectionException(
-                'the NFA stopped on all non-final states ({})'.format(
-                    ', '.join(str(state) for state in current_states)))
+                "the NFA stopped on all non-final states ({})".format(
+                    ", ".join(str(state) for state in current_states)
+                )
+            )
 
     def read_input_stepwise(self, input_str):
         """
@@ -114,7 +131,66 @@ class NFA(fa.FA):
         yield current_states
         for input_symbol in input_str:
             current_states = self._get_next_current_states(
-                current_states, input_symbol)
+                current_states, input_symbol
+            )
             yield current_states
 
         self._check_for_input_rejection(current_states)
+
+    @property
+    def _lambda_transition_exists(self) -> bool:
+        """
+        Checks if the nfa has lambda transitions.
+        Returns:
+            bool: If the nfa has lambda transitions, returns True; else False.
+        """
+        status = False
+        for transitions in self.transitions.values():
+            if "" in transitions:
+                return True
+        return status
+
+    @classmethod
+    def eliminate_lambda(cls, nfa):
+        """
+        Eliminates lambda transitions, and returns a new nfa.
+        Args:
+            nfa (VisualNFA): A VisualNFA object.
+        Returns:
+            VisualNFA: A VisualNFA object without lambda transitions.
+        """
+        if nfa._lambda_transition_exists:
+            nfa_lambda_eliminated = nfa.copy()
+
+            for state in sorted(nfa_lambda_eliminated.transitions):
+                # Find lambda closure for the state.
+                closures = nfa_lambda_eliminated._get_lambda_closure(state)
+
+                if nfa_lambda_eliminated.initial_state == state:
+                    if closures.difference(state).issubset(
+                        nfa_lambda_eliminated.final_states
+                    ):
+                        [
+                            nfa_lambda_eliminated.final_states.add(state)
+                            for state in closures.intersection(state)
+                        ]
+
+                for input_symbol in nfa_lambda_eliminated.input_symbols:
+                    next_states = nfa._get_next_current_states(
+                        closures, input_symbol
+                    )
+
+                    # Check if a dead state was returned.
+                    if next_states != set():
+                        # Update the transition after lambda move has been eliminated.
+                        nfa_lambda_eliminated.transitions[state][
+                            input_symbol
+                        ] = next_states
+
+                # Delete the lambda transition.
+                if "" in nfa_lambda_eliminated.transitions[state]:
+                    del nfa_lambda_eliminated.transitions[state][""]
+
+            return nfa_lambda_eliminated
+        else:
+            return nfa
